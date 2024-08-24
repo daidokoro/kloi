@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+{{#each cidrs}}
+  VPC{{ @index }}:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: {{ this }}
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: stack
+        Value: kloi
+
+{{/each}}
+
+{{#if subnet }}
+{{#each cidrs}}
+  MySubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      # AvailabilityZone: {{ ../subnet.region }}
+      VpcId: !Ref VPC{{@index}}
+      CidrBlock: {{ this }}
+
+{{/each}}
+{{/if}}
+
+  DoCustomResource:
+    Type: Custom::DoResource
+    Properties:
+      ServiceToken: !GetAtt CustomResourceFunction.Arn
+      Cidr: !GetAtt VPC0.CidrBlock
+
+  CustomResourceFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      SamResourceId: CustomResourceFunction
+    Properties:
+      Handler: index.lambda_handler
+      Runtime: python3.12
+      Timeout: 900
+      InlineCode: |
+        import cfnresponse
+        import json
+
+        def lambda_handler(event, context):
+            print("Received event: ", event)
+
+            responseData = {}
+            responseData['Data'] = 'Hello, World!'
+
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+
+
+

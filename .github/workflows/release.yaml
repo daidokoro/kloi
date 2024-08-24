@@ -1,0 +1,134 @@
+name: Build kloi
+
+on:
+  workflow_dispatch:
+    
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    name: Release - ${{ matrix.platform.release_for }}
+    strategy:
+      matrix:
+        platform:
+          - release_for: Linux-x86_64
+            os: ubuntu-20.04
+            target: x86_64-unknown-linux-gnu
+            bin: kloi
+            name: kloi-linux-x86_64.tar.gz
+            command: both
+
+          - release_for: macOS-x86_64
+            os: macOS-latest
+            target: x86_64-apple-darwin
+            bin: kloi
+            name: kloi-darwin-x86_64.tar.gz
+            command: both
+
+          - release_for: macOS-aarch64
+            os: macOS-latest
+            target: aarch64-apple-darwin
+            name: kloi-darwin-aarch64.tar.gz
+            bin: kloi
+            expect_file_re: "Mach-O.+arm64"
+            expect_cross: "--no-expect-cross"
+            expect_stripped: "--expect-stripped"
+            command: build
+
+          - release_for: Linux-aarch64
+            os: ubuntu-20.04
+            target: aarch64-unknown-linux-gnu
+            name: kloi-linux-aarch64.tar.gz
+            bin: kloi
+            expect_file_re: "aarch64"
+            expect_cross: "--expect-cross"
+            expect_stripped: "--no-expect-stripped"
+            can_test: true
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # - name: install libssl if ubuntu
+      #   if: matrix.platform.os == 'ubuntu-20.04'
+      #   run: |
+      #     sudo apt update
+      #     sudo apt-get install -y libssl-dev openssl
+
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: ${{ matrix.platform.command }}
+          target: ${{ matrix.platform.target }}
+          args: "--locked --release"
+          strip: true
+
+      - name: create tar
+        run: |
+          ( cd target/${{ matrix.platform.target }}/release/ && \
+              tar -czvf ${{ matrix.platform.name }} ${{ matrix.platform.bin }} )
+          
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.platform.name }}
+          path: target/${{ matrix.platform.target }}/release/${{ matrix.platform.name }}
+  
+
+  create_release:
+    runs-on: ubuntu-latest
+    name: create release
+    needs: 
+      - build
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: extract tag name from github.ref
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      - name: create release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAG: ${{ env.TAG }}
+        run: |
+          set -xv
+          gh release create ${{ env.TAG }} \
+            --title "Release ${{ env.TAG }}" \
+            --notes "$(awk '/## \[${{ env.TAG }}\]/{flag=1;next}/## \[/{flag=0}flag' CHANGELOG.md)" \
+            --draft
+  
+  upload_release_assetsV:
+    runs-on: ubuntu-latest
+    name: upload artifacts
+    needs: 
+      - create_release
+      
+    strategy:
+      matrix:
+        package:
+          - name: kloi-linux-x86_64.tar.gz
+          - name: kloi-darwin-x86_64.tar.gz
+          - name: kloi-darwin-aarch64.tar.gz
+          - name: kloi-linux-aarch64.tar.gz
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ matrix.package.name }}
+          path: artifact
+      
+      - run: ls -lR ./artifact
+      - name: extract tag name from github.ref
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      - name: upload
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          TAG: ${{ env.TAG }}
+        run: |
+          gh release upload ${{ env.TAG }} ./artifact/${{ matrix.package.name }} --clobber
+

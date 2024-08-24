@@ -1,0 +1,8 @@
+FROM arm64v8/rust:latest
+
+WORKDIR /usr/src/kloi
+COPY . .
+
+RUN cargo install --path .
+
+CMD ["kloi"]

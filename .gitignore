@@ -1,0 +1,45 @@
+# Ignore Cargo's target directory
+/target/
+
+# Ignore release artifacts
+*.rlib
+
+# Ignore the Cargo.lock file (if you don't want to check it in)
+/Cargo.lock
+
+# Ignore generated docs
+/target/doc/
+
+# Ignore build scripts output
+/target/release/
+/target/debug/
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore editor and IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.DS_Store
+
+# Ignore binary files
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Ignore MacOS-specific files
+.DS_Store
+
+# Ignore byproducts of `cargo bench`
+**/benchmarks/*.dat
+**/benchmarks/*.out
+
+# Ignore node_modules if using frontend frameworks
+/node_modules/
+
+# Ignore backup files
+*~
