@@ -71,10 +71,6 @@ impl ConfigLoader {
     }
 }
 
-// impl starlark::UnpackValue<'_> for serde_json::Value {
-
-// }
-
 #[starlark_module]
 pub fn starlark_stacks_module(builder: &mut GlobalsBuilder) {
     fn new(
@@ -213,7 +209,14 @@ fn http_functions(builder: &mut GlobalsBuilder) {
     // get - performs a simple  HTTP get request
     fn get(url: String, headers: Option<SmallMap<String, String>>) -> anyhow::Result<String> {
         thread::spawn(move || {
-            let resp = reqwest::blocking::get(url.as_str())
+            let mut req = reqwest::blocking::Client::new().get(url.as_str());
+            if let Some(h) = headers {
+                for (k, v) in h {
+                    req = req.header(k.as_str(), v.as_str());
+                }
+            }
+
+            let resp = req.send()
                 .map_err(|e| anyhow::Error::msg(format!("failed to execute http.get: {:?}", e)))?;
 
             if !resp.status().is_success() {
@@ -234,9 +237,15 @@ fn http_functions(builder: &mut GlobalsBuilder) {
     }
 
     // post - performs a simple HTTP post request
-    fn post(url: String, body: String) -> anyhow::Result<String> {
-        let content = reqwest::blocking::Client::new()
-            .post(url.as_str())
+    fn post(url: String, body: String, headers: Option<SmallMap<String, String>>) -> anyhow::Result<String> {
+        let mut req = reqwest::blocking::Client::new().post(url.as_str());
+        if let Some(h) = headers {
+            for (k, v) in h {
+                req = req.header(k.as_str(), v.as_str());
+            }
+        }
+       
+        let content = req
             .body(body)
             .send()
             .map_err(|e| anyhow::Error::msg(format!("failed to read config file: {:?}", e)))?
@@ -270,4 +279,154 @@ pub fn load_config_from_file(src: String) -> Result<Config, String> {
     eval.eval_module(ast, &globals).map_err(|e| e.to_string())?;
 
     Ok(Config::from(config.clone()))
+}
+
+
+// Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use indoc::indoc;
+    use tempdir::TempDir;
+    use httpmock::prelude::*;
+
+    // a macro that creates a temporary directory for testing
+    // and returns the path to the directory
+    macro_rules! create_test_config {
+        (config:$contents:expr) => {{    
+            // Create a temporary directory
+            let tmp_dir = TempDir::new("testing").map_err(|e| e.to_string()).unwrap();
+            let tmp_config_path_buf = tmp_dir.path().join("config.star");
+            let path = tmp_config_path_buf.to_string_lossy().to_string();
+    
+            // Create the file and write the contents to it
+            let mut tmp_config_file = File::create(&tmp_config_path_buf).unwrap();
+            write!(tmp_config_file, "{}", $contents).unwrap();
+    
+            load_config_from_file(path).unwrap()
+        }};
+    }
+    
+    
+    #[test]
+    fn test_load_config_and_stacks_functions() {
+        let config = create_test_config!(config: indoc! {r#"
+            stack = stacks.new(
+                name = 'test',
+                region = "eu-west-1",
+                template = "none",
+            )
+
+            # add the stack to the list of stacks
+            stacks.add(stack)
+        "#});
+
+        assert_eq!(config.stacks.len(), 1);
+        assert!("test" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+
+        let region = config.stacks[0].region.as_ref().unwrap();
+        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+
+        let template = config.stacks[0].template.as_str();
+        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+    }
+
+    #[test]
+    fn test_os_functions() {
+        let tmp_dir = TempDir::new("testing").map_err(|e| e.to_string()).unwrap();
+        let tmp_config_path_buf = tmp_dir.path().join("config.star");
+        let path = tmp_config_path_buf.to_string_lossy().to_string();
+
+        // Create the file and write the contents to it
+        let mut tmp_config_file = File::create(&tmp_config_path_buf).unwrap();
+        write!(tmp_config_file, "none").unwrap();
+
+        // set env var
+        std::env::set_var("AWS_REGION", "eu-west-1");
+        std::env::set_var("TEMPLATE_PATH", path);
+
+        // let url = server.url("/template");
+        let config = create_test_config!(config: indoc! {r#"
+            template_path = os.env("TEMPLATE_PATH")
+            name = "test-" + os.cmd("echo dev")
+            
+            stack = stacks.new(
+                name = 'test-dev',
+                region = os.env("AWS_REGION"),
+                template = os.open(template_path),
+            )
+
+            # add the stack to the list of stacks
+            stacks.add(stack)
+        "#});
+
+        assert_eq!(config.stacks.len(), 1);
+        assert!("test-dev" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+
+        let region = config.stacks[0].region.as_ref().unwrap();
+        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+
+        let template = config.stacks[0].template.as_str();
+        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+    }
+
+    #[test]
+    fn test_http_functions() {
+        let get_server = MockServer::start();
+        let post_server = MockServer::start();
+        let get_mock = get_server.mock(|when, then| {
+            when.method(GET)
+                .path("/template");
+            then.status(200)
+                .header("content-type", "text/html; charset=UTF-8")
+                .body("none");
+        });
+
+        let post_mock = post_server.mock(|when, then| {
+            when.method(POST)
+                .path("/template")
+                .header("env", "dev")
+                .body("test");
+            then.status(200)
+                .header("content-type", "text/html; charset=UTF-8")
+                .body("eu-west-1");
+        });
+
+
+        // add url to env var
+        std::env::set_var("TEMPLATE_URL", get_server.url("/template").as_str());
+        std::env::set_var("REGION_URL", post_server.url("/template").as_str());
+
+        let config = create_test_config!(config: indoc! {r#"
+            template_url = os.env("TEMPLATE_URL")
+            region = http.post(
+                url=os.env("REGION_URL"), 
+                headers={"env": "dev"}, 
+                body="test")
+            
+            stack = stacks.new(
+                name = 'test',
+                region = region,
+                template = http.get(template_url),
+            )
+
+            # add the stack to the list of stacks
+            stacks.add(stack)
+        "#});
+
+        // assert that the mock was called
+        get_mock.assert();
+        post_mock.assert();
+
+        let template = config.stacks[0].template.as_str();
+        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+
+        assert_eq!(config.stacks.len(), 1);
+        assert!("test" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+
+        let region = config.stacks[0].region.as_ref().unwrap();
+        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+    }
 }
