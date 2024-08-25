@@ -35,3 +35,6 @@ aws-sdk-cloudwatch = "1.44.0"
 aws-sdk-cloudwatchlogs = "1.43.0"
 chrono = "0.4.38"
 openssl = { version = "0.10.66", features = ["vendored"] }
+tempdir = "0.3.7"
+indoc = "2.0.5"
+httpmock = "0.7.0"
