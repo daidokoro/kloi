@@ -1,3 +1,5 @@
+[![Build kloi](https://github.com/daidokoro/kloi/actions/workflows/release.yaml/badge.svg)](https://github.com/daidokoro/kloi/actions/workflows/release.yaml)
+
 # kloi
 
  <p align="center">
@@ -49,10 +51,13 @@ kloi allows you to add cloudformation parameters, template values and other conf
 ### Installation
 
 #### MacOs & Linux
+
 ```sh
 curl -s https://raw.githubusercontent.com/daidokoro/kloi/main/install.sh | bash
 ```
+
 or with `sudo` if required.
+
 ```sh
 curl -s https://raw.githubusercontent.com/daidokoro/kloi/main/install.sh | sudo bash
 ```
@@ -62,6 +67,7 @@ curl -s https://raw.githubusercontent.com/daidokoro/kloi/main/install.sh | sudo 
 ```sh
 cargo install --git https://github.com/daidokoro/kloi kloi
 ```
+
 ### Configuration
 
 Kloi configuration files are written in [Starlark](https://github.com/bazelbuild/starlark), a python-like dialect developed to be used as a configuration language.
@@ -125,8 +131,8 @@ my_stack = stacks.new(
 
 Adds a stack to the kloi configuration
 
-| args  | required | type                                                        |
-|-------|----------|-------------------------------------------------------------|
+| args  | required | type                                                    |
+|-------|----------|---------------------------------------------------------|
 | stack | ✓        | `type(stack)` <br>*type returned by* [stacks.new](#new) |
 
 *usage:*
@@ -244,17 +250,20 @@ The http module contains functions for calling HTTP endpoints
 
 The get function is used to execute HTTP GET request for a given URL
 
-| args | required | type     | desc            |
-|------|----------|----------|-----------------|
-| url  | ✓        | `string` | The URL to call |
+| args    | required | type     | desc                                                                            |
+|---------|----------|----------|---------------------------------------------------------------------------------|
+| headers |          | `dict`   | A dictionary *(key/value pair)* containing the headers to send with the request |
+| url     | ✓        | `string` | The URL to call                                                                 |
 
 > returns: string
 
 *usage:*
 
 ```python
-# call endpoint to get template
-template = http.get('http://my.template.source')
+# call with headers to get template
+template = http.get(
+    headers={"some": "value"}, 
+    url='http://my.template.source')
 
 my_stack = stacks.new(
   name = 'my_stack',
@@ -266,7 +275,7 @@ my_stack = stacks.new(
 my_stack = stacks.new(
   name = 'my_stack',
   region = 'eu-west-1',
-  # call endpoint to get template
+  # call without headers
   template = http.get('http://my.template.source'),
 )
 ```
@@ -275,18 +284,22 @@ my_stack = stacks.new(
 
 The post function is used to execute HTTP POST requests for a given URL and payload
 
-| args    | required | type     | desc                                 |
-|---------|----------|----------|--------------------------------------|
-| url     | ✓        | `string` | The URL to call                      |
-| payload | ✓        | `dict`   | The payload to send with the request |
+| args    | required | type     | desc                                                                            |
+|---------|----------|----------|---------------------------------------------------------------------------------|
+| headers |          | `dict`   | A dictionary *(key/value pair)* containing the headers to send with the request |
+| url     | ✓        | `string` | The URL to call                                                                 |
+| body    | ✓        | `dict`   | The payload to send with the request                                            |
 
 > returns: string
 
 *usage:*
 
 ```python
-# call endpoint to get template
-template = http.get('http://my.template.source', {"some": "payload"})
+# call with headers
+template = http.get(
+  headers={"some": "value"}, 
+  url='http://my.template.source', 
+  body: {"some": "payload"})
 
 my_stack = stacks.new(
   name = 'my_stack',
@@ -298,7 +311,7 @@ my_stack = stacks.new(
 my_stack = stacks.new(
   name = 'my_stack',
   region = 'eu-west-1',
-  # call endpoint to get template
+  # call without headers
   template = http.post(
     'http://my.template.source',
     {"some": "payload"}
@@ -424,19 +437,16 @@ Resources:
 
 Note that the `{{#each}}` and `{{#if}}` blocks are used to iterate over the `cidrs` array and check if the `subnet` object is defined in the `values` dictionary. The result shows that the vpc and subnet resources are generated based on the values in the `cidrs` array and the `subnet` object.
 
---- 
+---
 
-
-Kloi is in __beta__ and is still under active development. If you find any issues or have any feature requests, please open an issue.
+Kloi is in **beta** and is still under active development. If you find any issues or have any feature requests, please open an issue.
 
 TODO:
 
 - [ ] CI/CD
-  - [x] Automate Release workflow
+  - [X] Automate Release workflow
   - [ ] Integration Tests on PR
   - [ ] Unit Tests on PR
 - [ ] Documentation
   - [ ] Add more examples
   - [ ] Add more detailed usage
-
-
