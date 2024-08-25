@@ -8,7 +8,7 @@ kloi is the successor to the [qaz](https://github.com/daidokoro/qaz) project. It
 
 Like [qaz](https://github.com/daidokoro/qaz), kloi supports templating, however, kloi uses the the [Handlerbars]() templating framework, more on that [here](#templating)
 
-### Why
+### Why?
 
 Using AWS CLI to deploy, delete or update Cloudformation stacks when rapidly testing builds is annonying, especially when dealing with complex templates with multiple stacks and parameters.
 
@@ -20,7 +20,8 @@ kloi allows you to add cloudformation parameters, template values and other conf
 
 ---
 
-### Contents
+<details>
+<summary><b>Table of Contents</b></summary>
 
 - **[Installation](#installation)**
   - [MacOs](#macos)
@@ -40,6 +41,8 @@ kloi allows you to add cloudformation parameters, template values and other conf
       - [post](#post)
   - [Templating](#templating)
 - **[Usage](#usage)**
+
+</details>
 
 ---
 
@@ -423,11 +426,17 @@ Note that the `{{#each}}` and `{{#if}}` blocks are used to iterate over the `cid
 
 --- 
 
+
+Kloi is in __beta__ and is still under active development. If you find any issues or have any feature requests, please open an issue.
+
 TODO:
 
 - [ ] CI/CD
-  - [x] Release workflow
+  - [x] Automate Release workflow
   - [ ] Integration Tests on PR
   - [ ] Unit Tests on PR
+- [ ] Documentation
+  - [ ] Add more examples
+  - [ ] Add more detailed usage
 
 
