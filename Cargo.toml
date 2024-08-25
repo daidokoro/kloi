@@ -38,3 +38,6 @@ openssl = { version = "0.10.66", features = ["vendored"] }
 tempdir = "0.3.7"
 indoc = "2.0.5"
 httpmock = "0.7.0"
+aws-smithy-runtime-api = "1.7.2"
+aws-smithy-runtime = {version = "1.6.3", features = ["test-util"]}
+http = "1.1.0"

@@ -77,7 +77,8 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
             .region(Region::new(region))
             .load()
             .await;
-        let client = aws_sdk_cloudformation::Client::new(&sdk_config);
+        let cfn_client = aws_sdk_cloudformation::Client::new(&sdk_config);
+        let s3_client = aws_sdk_s3::Client::new(&sdk_config);
 
         // convert parameters to vec of Parameter
         let mut params = Vec::new();
@@ -103,19 +104,19 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
         );
 
         // run update if stack exists
-        let exists = utils::stack_exists(&client, &stack.name).await;
+        let exists = utils::stack_exists(&cfn_client, &stack.name).await;
         if let Ok(_) = exists {
             // stack exists, update
             // execute on_update hooks
             exec_jobs!(on_update, &stack, stack.name.clone(), false);
-            update_stack(&client, &stack, sdk_config, capabilities, params).await?;
+            update_stack(&cfn_client, &s3_client, &stack, capabilities, params).await?;
             exec_jobs!(on_update, &stack, stack.name.clone(), true);
             return Ok(());
         }
 
         // execute on_apply hook
         exec_jobs!(on_create, &stack, stack.name.clone(), false);
-        create_stack(&client, &stack, sdk_config, capabilities, params).await?;
+        create_stack(&cfn_client, &s3_client, &stack, capabilities, params).await?;
         exec_jobs!(on_create, &stack, stack.name.clone(), true);
     }
 
@@ -124,11 +125,9 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
 
 // update_stack updates a stack
 pub async fn update_stack(
-    client: &aws_sdk_cloudformation::Client,
+    cfn_client: &aws_sdk_cloudformation::Client,
+    s3_client: &aws_sdk_s3::Client,
     s: &stacks::Stack,
-    sdk_config: SdkConfig,
-    // stack_name: &str,
-    // template: &str,
     capabilities: Option<Vec<Capability>>,
     params: Vec<aws_sdk_cloudformation::types::Parameter>,
 ) -> Result<(), String> {
@@ -136,7 +135,7 @@ pub async fn update_stack(
     // load template
     let template = s.generate_template()?;
 
-    let mut req = client
+    let mut req = cfn_client
         .update_stack()
         .stack_name(&s.name)
         .set_parameters(Some(params))
@@ -151,7 +150,7 @@ pub async fn update_stack(
             )
         })?;
         let key = format!("kloi-{}", &s.template.md5());
-        let url = s3upload(sdk_config, bucket.clone(), key, template.to_string()).await?;
+        let url = s3upload(s3_client, bucket.clone(), key, template.to_string()).await?;
 
         req.template_url(&url)
     } else {
@@ -163,17 +162,15 @@ pub async fn update_stack(
     stack_request_result_handle!(res, s.name, "update stack");
 
     // wait for stack
-    utils::stackprogress(&client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Update).await
+    utils::stackprogress(&cfn_client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Update).await
     // utils::wait_for_stack_v2(&client, &s.name, utils::WaitEvent::Update).await
 }
 
 // create_stack creates a stack
 pub async fn create_stack(
-    client: &aws_sdk_cloudformation::Client,
+    cfn_client: &aws_sdk_cloudformation::Client,
+    s3_client: &aws_sdk_s3::Client,
     s: &stacks::Stack,
-    sdk_config: SdkConfig,
-    // stack_name: &str,
-    // template: &str,
     capabilities: Option<Vec<Capability>>,
     params: Vec<aws_sdk_cloudformation::types::Parameter>,
 ) -> Result<(), String> {
@@ -181,7 +178,7 @@ pub async fn create_stack(
     log::debug!("create_stack function called for stack: {}", s.name);
     let template = s.generate_template()?;
 
-    let mut req = client
+    let mut req = cfn_client
         .create_stack()
         .stack_name(&s.name)
         .set_parameters(Some(params))
@@ -196,7 +193,7 @@ pub async fn create_stack(
             )
         })?;
         let key = format!("kloi-{}", &s.template.md5());
-        let url = s3upload(sdk_config, bucket.clone(), key, template.to_string()).await?;
+        let url = s3upload(s3_client, bucket.clone(), key, template.to_string()).await?;
 
         req.template_url(&url)
     } else {
@@ -208,18 +205,16 @@ pub async fn create_stack(
     stack_request_result_handle!(res, s.name, "create stack");
 
     // wait for stack
-    utils::stackprogress(&client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Create).await
-    // utils::wait_for_stack_v2(&client, &s.name, utils::WaitEvent::Create).await
+    utils::stackprogress(&cfn_client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Create).await
 }
 
 async fn s3upload(
-    sdk_config: SdkConfig,
+    client: &aws_sdk_s3::Client,
     bucket: String,
     key: String,
     data: String,
 ) -> Result<String, String> {
     log::debug!("uploading template to s3: s3://{}/{}", bucket, key);
-    let client = aws_sdk_s3::Client::new(&sdk_config);
     let buffer = ByteStream::new(SdkBody::from(data));
 
     client
@@ -247,3 +242,107 @@ impl Md5Sum for String {
         format!("{:x}", digest)
     }
 }
+
+
+// tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use indoc::indoc;
+    use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
+    use aws_smithy_types::body::SdkBody;
+
+    macro_rules! make_client {
+        ($sdk:ident, $relay_client:ident) => {
+            $sdk::Client::from_conf(
+                $sdk::Config::builder()
+                    .behavior_version(BehaviorVersion::latest())
+                    .credentials_provider($sdk::config::Credentials::new(
+                        "access_key_id",
+                        "secret_access_key",
+                        Some("session_token".to_string()),
+                        None,
+                        "",
+                    ))
+                    .region($sdk::config::Region::new("eu-central-1"))
+                    .http_client($relay_client.clone())
+                    .build())
+        };
+    }
+
+
+    #[tokio::test]
+    async fn test_create_stack() {
+        let cfn_replay_event = ReplayEvent::new(
+            http::Request::builder()
+                .method("POST")
+                .body(SdkBody::empty())
+                .unwrap(),
+            http::Response::builder()
+                .status(200)
+                .body(SdkBody::from(r#"
+                {
+                    "StackId": "arn:aws:cloudformation:eu-west-1:091066890486:stack/my-stack/2a2c3ae0-632b-11ef-86b6-0680956f3c6d"
+                }
+            "#)).unwrap(),
+        );
+
+        let s3_replay_event = ReplayEvent::new(
+            http::Request::builder()
+                .body(SdkBody::empty())
+                .unwrap(),
+            http::Response::builder()
+                .status(200)
+                .body(SdkBody::empty())
+                .unwrap(),
+        );
+
+        let cfn_replay_client = StaticReplayClient::new(vec![
+            cfn_replay_event,
+        ]);
+
+        let s3_replay_client = StaticReplayClient::new(vec![
+            s3_replay_event,
+        ]);
+
+        let cfn_client = make_client!(aws_sdk_cloudformation, cfn_replay_client);
+        let s3_client = make_client!(aws_sdk_s3, s3_replay_client);
+
+        let stack = stacks::Stack {
+            name: "test-stack".to_string(),
+            region: Some("eu-west-1".to_string()),
+            template: "none".to_string(),
+            parameters: Some(HashMap::new()),
+            capabilities: Some(vec![]),
+            bucket: None,
+            custom_resources: None,
+            depends_on: None,
+            values: None,
+            exec: None,
+        };
+
+        // let r = create_stack(
+        //     &cfn_client,
+        //     &s3_client,
+        //     &stack,
+        //     None,
+        //     Vec::new()
+        // ).await;
+
+        let r = s3upload(&s3_client, "somebucket".to_string(), "somekey".to_string(), "somedata".to_string()).await;
+
+    
+        let s3_req_count = s3_replay_client.actual_requests().into_iter().count();
+        assert_eq!(s3_req_count, 1, "expected 0 request, got {}", s3_req_count);
+
+        // let cfn_req_count = cfn_replay_client.actual_requests().into_iter().count();
+        // assert_eq!(cfn_req_count, 1, "expected 0 request, got {}", cfn_req_count);
+
+            // on_create: None,
+            // on_update: None,
+            // depends_on: None,
+    }
+
+}
+
