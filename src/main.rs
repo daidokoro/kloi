@@ -8,7 +8,7 @@ use cli::*;
 use colored::Colorize;
 
 const APP_NAME: &str = "kloi";
-const VERSION: &str = "v1.0.0";
+static VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn about() -> String {
     let logo = r#"
@@ -17,14 +17,14 @@ fn about() -> String {
     \ \  _"-.  \ \ \____  \ \ \/\ \  \ \ \  
      \ \_\ \_\  \ \_____\  \ \_____\  \ \_\ 
       \/_/\/_/   \/_____/   \/_____/   \/_/ 
-      
+
     "#
     .truecolor(255, 146, 0);
 
     let desc =
         "A no-frills cli tool for managing aws cloudformation stacks".truecolor(125, 174, 189);
 
-    format!("{}\n{}", logo, desc)
+    format!("{}\n{}\n\n{}", logo, VERSION.green(), desc)
 }
 
 fn root_command() -> Command {
