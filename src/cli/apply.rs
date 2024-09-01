@@ -29,6 +29,7 @@ pub fn command() -> Command {
         .about(ABOUT.truecolor(125, 174, 189).to_string())
         .alias("a")
         .arg(arg!([stack]))
+        .arg(arg!(-A --all ... "apply (update/deply) all stacks"))
         .arg(arg!(-c --config <FILE> "path to config file"))
 }
 
@@ -47,17 +48,34 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
     // note: unwrap is fine here, since we've already checked if config is set above
     let conf = config::load_config_from_file(config_path.unwrap())?;
 
-    let mut execution_stacks = match matches.get_one::<String>("stack") {
-        Some(c) => {
-            if let None = conf.stacks.iter().find(|s| &s.name == c) {
-                Err(format!("stack [{}] not found", c))?;
-            };
-            vec![conf.stacks.iter().find(|s| &s.name == c).unwrap()]
+    let apply_all = matches.get_one::<u8>("all").unwrap_or(&0);
+    let mut selected_stacks = if *apply_all == 1 {
+        conf.stacks.iter().collect()
+    } else {
+        match matches.get_one::<String>("stack") {
+            Some(c) => {
+                if let None = conf.stacks.iter().find(|s| &s.name == c) {
+                    Err(format!("stack [{}] not found", c))?;
+                };
+                vec![conf.stacks.iter().find(|s| &s.name == c).unwrap()]
+            }
+            None => {
+                // if no stack is specified, use interactive form
+                let opts = conf
+                    .stacks
+                    .iter()
+                    .map(|s| s.name.clone())
+                    .collect::<Vec<String>>();
+                let selected = utils::multiselect(opts, "select stack");
+                conf.stacks
+                    .iter()
+                    .filter(|s| selected.contains(&s.name))
+                    .collect()
+            }
         }
-        None => conf.stacks.iter().collect(),
     };
 
-    execution_stacks.sort_by(|a, b| {
+    selected_stacks.sort_by(|a, b| {
         if a.is_dependency_of(b) {
             return std::cmp::Ordering::Less;
         }
@@ -69,8 +87,20 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
         std::cmp::Ordering::Equal
     });
 
+    if selected_stacks.len() == 0 {
+        return Err("no stacks found".to_string());
+    }
+
+    log::debug!(
+        "selected stacks: {:?}",
+        selected_stacks
+            .iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<String>>()
+    );
+
     // iterate stacks
-    for stack in execution_stacks.iter() {
+    for stack in selected_stacks.iter() {
         // // create client per stack
         let region = stack.region.clone().unwrap_or("eu-west-1".to_string());
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
@@ -163,7 +193,14 @@ pub async fn update_stack(
     stack_request_result_handle!(res, s.name, "update stack");
 
     // wait for stack
-    utils::stackprogress(&client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Update).await
+    utils::stackprogress(
+        &client,
+        &s.name,
+        s.custom_resources.clone(),
+        s.region.clone().unwrap(),
+        utils::WaitEvent::Update,
+    )
+    .await
     // utils::wait_for_stack_v2(&client, &s.name, utils::WaitEvent::Update).await
 }
 
@@ -208,7 +245,14 @@ pub async fn create_stack(
     stack_request_result_handle!(res, s.name, "create stack");
 
     // wait for stack
-    utils::stackprogress(&client, &s.name, s.custom_resources.clone(), s.region.clone().unwrap(), utils::WaitEvent::Create).await
+    utils::stackprogress(
+        &client,
+        &s.name,
+        s.custom_resources.clone(),
+        s.region.clone().unwrap(),
+        utils::WaitEvent::Create,
+    )
+    .await
     // utils::wait_for_stack_v2(&client, &s.name, utils::WaitEvent::Create).await
 }
 
