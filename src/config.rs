@@ -216,7 +216,8 @@ fn http_functions(builder: &mut GlobalsBuilder) {
                 }
             }
 
-            let resp = req.send()
+            let resp = req
+                .send()
                 .map_err(|e| anyhow::Error::msg(format!("failed to execute http.get: {:?}", e)))?;
 
             if !resp.status().is_success() {
@@ -237,14 +238,18 @@ fn http_functions(builder: &mut GlobalsBuilder) {
     }
 
     // post - performs a simple HTTP post request
-    fn post(url: String, body: String, headers: Option<SmallMap<String, String>>) -> anyhow::Result<String> {
+    fn post(
+        url: String,
+        body: String,
+        headers: Option<SmallMap<String, String>>,
+    ) -> anyhow::Result<String> {
         let mut req = reqwest::blocking::Client::new().post(url.as_str());
         if let Some(h) = headers {
             for (k, v) in h {
                 req = req.header(k.as_str(), v.as_str());
             }
         }
-       
+
         let content = req
             .body(body)
             .send()
@@ -281,35 +286,33 @@ pub fn load_config_from_file(src: String) -> Result<Config, String> {
     Ok(Config::from(config.clone()))
 }
 
-
 // Tests
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
+    use indoc::indoc;
     use std::fs::File;
     use std::io::Write;
-    use indoc::indoc;
     use tempdir::TempDir;
-    use httpmock::prelude::*;
 
     // a macro that creates a temporary directory for testing
     // and returns the path to the directory
     macro_rules! create_test_config {
-        (config:$contents:expr) => {{    
+        (config:$contents:expr) => {{
             // Create a temporary directory
             let tmp_dir = TempDir::new("testing").map_err(|e| e.to_string()).unwrap();
             let tmp_config_path_buf = tmp_dir.path().join("config.star");
             let path = tmp_config_path_buf.to_string_lossy().to_string();
-    
+
             // Create the file and write the contents to it
             let mut tmp_config_file = File::create(&tmp_config_path_buf).unwrap();
             write!(tmp_config_file, "{}", $contents).unwrap();
-    
+
             load_config_from_file(path).unwrap()
         }};
     }
-    
-    
+
     #[test]
     fn test_load_config_and_stacks_functions() {
         let config = create_test_config!(config: indoc! {r#"
@@ -324,13 +327,25 @@ mod tests {
         "#});
 
         assert_eq!(config.stacks.len(), 1);
-        assert!("test" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+        assert!(
+            "test" == config.stacks[0].name,
+            "expected stack name to be 'test', got: {}",
+            config.stacks[0].name
+        );
 
         let region = config.stacks[0].region.as_ref().unwrap();
-        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+        assert!(
+            "eu-west-1" == region,
+            "expected stack region to be 'eu-west-1', got: {}",
+            region
+        );
 
         let template = config.stacks[0].template.as_str();
-        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+        assert!(
+            "none" == template,
+            "expected stack template to be 'none', got: {}",
+            template
+        );
     }
 
     #[test]
@@ -363,13 +378,25 @@ mod tests {
         "#});
 
         assert_eq!(config.stacks.len(), 1);
-        assert!("test-dev" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+        assert!(
+            "test-dev" == config.stacks[0].name,
+            "expected stack name to be 'test', got: {}",
+            config.stacks[0].name
+        );
 
         let region = config.stacks[0].region.as_ref().unwrap();
-        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+        assert!(
+            "eu-west-1" == region,
+            "expected stack region to be 'eu-west-1', got: {}",
+            region
+        );
 
         let template = config.stacks[0].template.as_str();
-        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+        assert!(
+            "none" == template,
+            "expected stack template to be 'none', got: {}",
+            template
+        );
     }
 
     #[test]
@@ -377,8 +404,7 @@ mod tests {
         let get_server = MockServer::start();
         let post_server = MockServer::start();
         let get_mock = get_server.mock(|when, then| {
-            when.method(GET)
-                .path("/template");
+            when.method(GET).path("/template");
             then.status(200)
                 .header("content-type", "text/html; charset=UTF-8")
                 .body("none");
@@ -393,7 +419,6 @@ mod tests {
                 .header("content-type", "text/html; charset=UTF-8")
                 .body("eu-west-1");
         });
-
 
         // add url to env var
         std::env::set_var("TEMPLATE_URL", get_server.url("/template").as_str());
@@ -421,12 +446,24 @@ mod tests {
         post_mock.assert();
 
         let template = config.stacks[0].template.as_str();
-        assert!("none" == template, "expected stack template to be 'none', got: {}", template);
+        assert!(
+            "none" == template,
+            "expected stack template to be 'none', got: {}",
+            template
+        );
 
         assert_eq!(config.stacks.len(), 1);
-        assert!("test" == config.stacks[0].name, "expected stack name to be 'test', got: {}", config.stacks[0].name);
+        assert!(
+            "test" == config.stacks[0].name,
+            "expected stack name to be 'test', got: {}",
+            config.stacks[0].name
+        );
 
         let region = config.stacks[0].region.as_ref().unwrap();
-        assert!("eu-west-1" == region, "expected stack region to be 'eu-west-1', got: {}", region);
+        assert!(
+            "eu-west-1" == region,
+            "expected stack region to be 'eu-west-1', got: {}",
+            region
+        );
     }
 }

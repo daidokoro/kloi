@@ -19,6 +19,7 @@ pub fn command() -> Command {
         .about(ABOUT.truecolor(125, 174, 189).to_string())
         .alias("d")
         .arg(arg!([stack]))
+        .arg(arg!(-A --all ... "delete all stacks"))
         .arg(arg!(-c --config <FILE> "path to config file"))
 }
 
@@ -37,19 +38,34 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
     // note: unwrap is fine here, since we've already checked if config is set above
     let conf = config::load_config_from_file(config_path.unwrap())?;
 
-    let mut execution_stacks = match matches.get_one::<String>("stack") {
-        Some(c) => {
-            if let None = conf.stacks.iter().find(|s| &s.name == c) {
-                Err(format!("stack [{}] not found", c))?;
-            };
-            vec![conf.stacks.iter().find(|s| &s.name == c).unwrap()]
+    let apply_all = matches.get_one::<u8>("all").unwrap_or(&0);
+    let mut selected_stacks = if *apply_all == 1 {
+        conf.stacks.iter().collect()
+    } else {
+        match matches.get_one::<String>("stack") {
+            Some(c) => {
+                if let None = conf.stacks.iter().find(|s| &s.name == c) {
+                    Err(format!("stack [{}] not found", c))?;
+                };
+                vec![conf.stacks.iter().find(|s| &s.name == c).unwrap()]
+            }
+            None => {
+                // if no stack is specified, use interactive form
+                let opts = conf
+                    .stacks
+                    .iter()
+                    .map(|s| s.name.clone())
+                    .collect::<Vec<String>>();
+                let selected = utils::multiselect(opts, "select stack");
+                conf.stacks
+                    .iter()
+                    .filter(|s| selected.contains(&s.name))
+                    .collect()
+            }
         }
-
-        // if no stack is specified, select all stacks
-        None => conf.stacks.iter().collect(),
     };
 
-    execution_stacks.sort_by(|a, b| {
+    selected_stacks.sort_by(|a, b| {
         if a.is_dependency_of(b) {
             return std::cmp::Ordering::Less;
         }
@@ -62,9 +78,17 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
     });
 
     // reverse the order of execution_stacks
-    execution_stacks.reverse();
+    selected_stacks.reverse();
 
-    for stack in execution_stacks {
+    log::debug!(
+        "selected stacks: {:?}",
+        selected_stacks
+            .iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<String>>()
+    );
+
+    for stack in selected_stacks {
         // execute on_delete hook
         exec_jobs!(on_delete, &stack, stack.name.clone(), false);
 
@@ -86,7 +110,14 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
         stack_request_result_handle!(res, stack.name, "delete stack");
 
         // wait for stack to be deleted
-        utils::stackprogress(&client, &stack.name, stack.custom_resources.clone(), stack.region.clone().unwrap(), utils::WaitEvent::Delete).await?;
+        utils::stackprogress(
+            &client,
+            &stack.name,
+            stack.custom_resources.clone(),
+            stack.region.clone().unwrap(),
+            utils::WaitEvent::Delete,
+        )
+        .await?;
 
         // execute on_deleted hook
         exec_jobs!(on_delete, &stack, stack.name.clone(), true);

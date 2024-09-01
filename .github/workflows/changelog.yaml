@@ -35,11 +35,13 @@ jobs:
     - name: check file
       if: ${{ steps.changed-files.outputs.all_changed_files != '' }}
       run: |
-        git diff --exit-code --quiet origin/main... ./CHANGELOG.md
-        if [ $? -ne 1 ]; then
+        set -xv
+        changes=$(git diff origin/main... CHANGELOG.md | wc -l | xargs)
+        if [ $changes -eq 0 ]; then
           echo "Following files have been changed:"
           echo $(git diff --name-only origin/main... ./)
           echo ""
           echo "Please update the CHANGELOG.md required for this PR".
           exit 1
         fi
+        set +xv

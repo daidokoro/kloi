@@ -1,4 +1,5 @@
 use crate::config;
+use crate::utils;
 use clap::ArgMatches;
 use clap::{arg, Command};
 use colored::Colorize;
@@ -34,14 +35,21 @@ pub async fn handle(matches: &ArgMatches) -> Result<(), String> {
     // load config and create client
     // note: unwrap is fine here, since we've already checked if config is set above
     let conf = config::load_config_from_file(config_path.unwrap())?;
-    let stack_name = match matches.get_one::<String>("stack") {
+    let stack_name: String = match matches.get_one::<String>("stack") {
         Some(c) => {
             if let None = conf.stacks.iter().find(|s| &s.name == c) {
                 Err(format!("stack [{}] not found", c))?;
             };
-            c
+            c.to_string()
         }
-        None => return Err("stack name required, please supply using [stack]".to_string()),
+        None => {
+            let opts = conf
+                .stacks
+                .iter()
+                .map(|s| s.name.clone())
+                .collect::<Vec<String>>();
+            utils::singleselect(opts, "select stack")
+        }
     };
 
     let ps = SyntaxSet::load_defaults_newlines();

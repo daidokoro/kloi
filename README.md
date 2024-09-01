@@ -72,6 +72,26 @@ cargo install --git https://github.com/daidokoro/kloi kloi
 
 Kloi configuration files are written in [Starlark](https://github.com/bazelbuild/starlark), a python-like dialect developed to be used as a configuration language.
 
+Configuration files are specified using the `-c/--config` flag or using the `KLOI_CONFIG` env variable.
+
+Configuration files can be read remotely via HTTP or locally from the file system.
+
+```sh
+# using KLOI_CONFIG env variable
+export KLOI_CONFIG='https://path/to/config.star '
+kloi apply <stack-name>
+
+# or --config flag
+kloi apply <stack-name> --config https://path.to/config.star
+
+# or local file
+kloi apply <stack-name> --config path/to/config.star
+```
+
+Note the KLOI_CONFIG env variable takes precedence over the `--config` flag.
+
+By allowing remote configuration files, kloi can be used to centralise cloudformation templates and configurations across multiple projects.
+
 There are a few internal configuration functions/modules to be aware of when writing a kloi configuration file.
 
 #### Modules
@@ -86,7 +106,7 @@ Functions in kloi config are called using the following syntax:
 
 ##### Stacks
 
-This module allows you to create and add cloudformation stacks. It has the following functions
+This module allows you to define and add cloudformation stacks to your workflow. It has the following functions
 
 ###### new
 
@@ -94,8 +114,8 @@ Creates a new stack object
 
 | args             | required | type           | desc                                                                                                                                                                                                                                        |
 |------------------|----------|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| name             | ✓        | `string`       | The name given to your stack, this name will be used to set the stack name when deploying                                                                                                                                                   |
-| region           | ✓        | `string`       | The region to deploy your stack. Note that regions are not global, a region must be specified per stack                                                                                                                                     |
+| name             | ✓        | `string`       | The name given to your stack, this name will be used to set the stack name when deploying and is also the name used when referring to the stack on the cli, for eg:<br>`kloi  apply <name>`                                                                                                                                                   |
+| region           | ✓        | `string`       | The region to deploy your stack. Note that regions are not global, a region must be specified per stack. In this way, `kloi` is able to make manages stacks across multiple regions.                                                                                                                                     |
 | template         | ✓        | `string`       | The cloudformation template string                                                                                                                                                                                                          |
 | parameters       |          | `dict`         | A dictionary *(key/value pair)* containing the Parameter Names and Values to pass to the cloudformation template                                                                                                                            |
 | capabilities     |          | `list<string>` | Depending on the resources being deployed by your cloudformation template, specific IAM capabilities may be required. <br><br>Allowed Values:<br> - CAPABILITY_IAM<br> - CAPABILITY_NAMED_IAM<br> - CAPABILITY_AUTO_EXPAND                  |
@@ -439,6 +459,70 @@ Note that the `{{#each}}` and `{{#if}}` blocks are used to iterate over the `cid
 
 ---
 
+### Usage
+
+#### apply / delete
+
+Kloi has a few commands that can be used to manage your cloudformation stacks. 
+
+- **apply**: Deploys/Updates a cloudformation stack
+
+```sh
+$ kloi apply <stack-name> --config <path/to/config>
+
+
+```
+
+- **delete**: Deletes a stack from AWS Cloudformation
+
+```sh
+$ kloi delete <stack-name> --config <path/to/config>
+```
+
+You can use the environment variable `KLOI_CONFIG` to set the path to your configuration file. This will allow you to run kloi commands without specifying the `--config` flag.
+
+```sh
+$ kloi apply <stack-name>
+$ kloi delete <stack-name>
+```
+
+If you're not sure what the stack names are in your configuration file, you can run the `kloi apply` or `kloi delete` commands without any arguments to get an interactive list of stacks to choose from.
+
+<p align="center">
+  <img src="misc/kloi-interactive-example.gif">
+</p>
+
+
+#### show
+
+To view the cloudformation template associated with the stack, you can use the `show` command.
+
+```sh
+$ kloi show <stack-name> --config <path/to/config>
+```
+
+This is useful for debugging and verifying that the template is correct before deploying, especially when using templating values to expand the template dynamically.
+
+
+<p align="center">
+  <img src="misc/kloi-show-command.gif">
+</p>
+
+
+#### debug
+
+Debug logs can be enabled by setting the `KLOI_LOG` environment variable to `debug`.
+
+```sh
+$ export KLOI_LOG=debug
+$ kloi apply <stack-name>
+
+# or
+$ KLOI_LOG=debug kloi apply <stack-name>
+```
+
+---
+
 Kloi is in **beta** and is still under active development. If you find any issues or have any feature requests, please open an issue.
 
 TODO:
@@ -450,3 +534,7 @@ TODO:
 - [ ] Documentation
   - [ ] Add more examples
   - [ ] Add more detailed usage
+- [ ] Features
+  - [ ] Value and Parameter override from the CLI
+  - [ ] Improve `kloi status` command output, show drifts and other stack information
+  - [ ] `kloi copy` command to copy existing cloudformation stacks into a kloi config.
