@@ -36,8 +36,8 @@ jobs:
       if: ${{ steps.changed-files.outputs.all_changed_files != '' }}
       run: |
         set -xv
-        git diff --quiet origin/main... ./CHANGELOG.md
-        if [ $? -ne 1 ]; then
+        changes=$(git diff origin/main... CHANGELOG.md | wc -l | xargs)
+        if [ $changes -eq 0 ]; then
           echo "Following files have been changed:"
           echo $(git diff --name-only origin/main... ./)
           echo ""
