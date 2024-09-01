@@ -4,13 +4,14 @@ use indicatif::{ProgressBar, ProgressStyle};
 // use isatty::stdout_isatty;
 use aws_config::{self, BehaviorVersion};
 use aws_sdk_cloudformation::Client;
+use chrono::{TimeZone, Utc};
+use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 use regex::Regex;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::thread;
 use tokio::time::{sleep, Duration};
-use chrono::{Utc, TimeZone};
 
 // enum for wait events
 #[derive(Clone)]
@@ -120,10 +121,8 @@ pub async fn stackprogress(
                         .unwrap() // TODO: handle unwrap
                         .to_string();
 
-                    
                     let stk = ResourceStatus::from(status.as_str());
 
-          
                     pb.set_prefix(format!(
                         "[{}] [{}] {}",
                         "info".green(),
@@ -201,7 +200,6 @@ pub async fn stackprogress(
     // get custom resources
     if let Some(crs) = custom_respirces {
         for cr in crs.iter() {
-
             let physical_id = client
                 .describe_stack_resources()
                 .stack_name(stack_name)
@@ -225,7 +223,12 @@ pub async fn stackprogress(
 
             let logs = get_cloudwatch_logs(physical_id, region.clone()).await?;
             // pb.finish_with_message(format!("[{}] {}", cr.cyan(), logs));
-            events.insert(format!("\n---\n[{}]\n{}---\n", cr.bold(), logs).truecolor(96, 96, 96).to_string(), None);
+            events.insert(
+                format!("\n---\n[{}]\n{}---\n", cr.bold(), logs)
+                    .truecolor(96, 96, 96)
+                    .to_string(),
+                None,
+            );
         }
     }
 
@@ -520,14 +523,14 @@ async fn get_cloudwatch_logs(lambda_id: String, region: String) -> Result<String
                     .unwrap_or("unknown error")
                     .to_string()
             })?;
-    
+
         // ts - convert epoch to rfc3339
         let ts = |ts: String| -> String {
             let epoch = ts.parse::<i64>().expect("Failed to parse epoch string");
             let dt = Utc.timestamp_opt(epoch, 0).unwrap();
             dt.to_rfc3339()
         };
-    
+
         lines = events
             .events()
             .iter()
@@ -549,13 +552,7 @@ async fn get_cloudwatch_logs(lambda_id: String, region: String) -> Result<String
         sleep(Duration::from_secs(4)).await;
     }
 
-
-
-    Ok(format!(
-        "{}:\n{}",
-        loggroup.cyan().bold(),
-        lines.join("")
-    ))
+    Ok(format!("{}:\n{}", loggroup.cyan().bold(), lines.join("")))
 }
 
 /// handles the result of a stack requests
@@ -636,3 +633,26 @@ macro_rules! exec_jobs {
 // make macro public
 pub(crate) use exec_jobs;
 pub(crate) use stack_request_result_handle;
+
+// interactive cli functions
+pub fn multiselect(opts: Vec<String>, prompt: &str) -> Vec<String> {
+    let defaults = &[false, false, true, false];
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .items(&opts[..])
+        .defaults(&defaults[..])
+        .interact()
+        .unwrap();
+
+    selections.iter().map(|i| opts[*i].clone()).collect()
+}
+
+pub fn singleselect(opts: Vec<String>, prompt: &str) -> String {
+    let selections = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .items(&opts[..])
+        .interact()
+        .unwrap();
+
+    opts[selections].clone()
+}
