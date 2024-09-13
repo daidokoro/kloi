@@ -630,7 +630,23 @@ macro_rules! exec_jobs {
     };
 }
 
+#[macro_export]
+macro_rules! sh {
+    ($cmd_str:expr) => {{
+        use std::process::Command;
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg($cmd_str)
+            .output()
+            .expect("Failed to execute command");
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        (stdout, stderr)
+    }};
+}
+
 // make macro public
+pub(crate) use sh;
 pub(crate) use exec_jobs;
 pub(crate) use stack_request_result_handle;
 

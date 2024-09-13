@@ -62,6 +62,7 @@ async fn main() -> Result<(), String> {
 
     if let Err(e) = r {
         log::error!("{}", e.red());
+        std::process::exit(1);
     }
 
     Ok(())
